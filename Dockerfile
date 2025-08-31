@@ -1,33 +1,15 @@
-# Build stage
-FROM debian:bullseye-slim AS builder
-
-# Install build dependencies only
-RUN apt-get update && \
-    apt-get install -y wget build-essential gcc g++ git libcurl4-openssl-dev libssl-dev libjansson-dev ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Go 1.25+
-ENV GO_VERSION=1.25.0
-RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
-    rm go${GO_VERSION}.linux-amd64.tar.gz
-ENV PATH="/usr/local/go/bin:$PATH"
-
-# Build openvpn-auth-oauth2 plugin
-RUN git clone --depth 1 https://github.com/jkroepke/openvpn-auth-oauth2.git /opt/openvpn-auth-oauth2 && \
-    cd /opt/openvpn-auth-oauth2 && \
-    go build -buildmode=plugin -o openvpn-auth-oauth2.so
-
-# Final runtime stage
+# Use official Debian as base
 FROM debian:bullseye-slim
 
-# Install only runtime dependencies
+# Install dependencies
 RUN apt-get update && \
-    apt-get install -y openvpn awscli easy-rsa ca-certificates && \
+    apt-get install -y openvpn wget ca-certificates awscli easy-rsa && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy built plugin from build stage
-COPY --from=builder /opt/openvpn-auth-oauth2/openvpn-auth-oauth2.so /usr/lib/openvpn/plugins/openvpn-auth-oauth2.so
+# Download and install openvpn-auth-oauth2 from GitHub releases
+RUN wget -O /tmp/openvpn-auth-oauth2.deb https://github.com/jkroepke/openvpn-auth-oauth2/releases/download/v1.25.2/openvpn-auth-oauth2_1.25.2_linux_amd64.deb && \
+    dpkg -i /tmp/openvpn-auth-oauth2.deb && \
+    rm /tmp/openvpn-auth-oauth2.deb
 
 # Copy scripts
 COPY entrypoint.sh /entrypoint.sh

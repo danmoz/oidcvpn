@@ -11,11 +11,40 @@ if [ -z "$OIDCVPN_S3_URI" ]; then
   exit 1
 fi
 
-# Check if any files exist in the S3 URI (folder/prefix)
-if aws s3 ls "$OIDCVPN_S3_URI/" | grep -q .; then
-  echo "Error: S3 URI $OIDCVPN_S3_URI already contains files."
-  echo "Please rename or delete the existing S3 folder before running init.sh."
+# Test AWS credentials and check for existing files in one operation
+echo "Testing AWS credentials and checking for existing files..."
+S3_LISTING=$(aws s3 ls "$OIDCVPN_S3_URI/" 2>&1)
+AWS_EXIT_CODE=$?
+
+# Check if AWS command failed (credentials/permissions issue)
+if [ $AWS_EXIT_CODE -ne 0 ]; then
+  if echo "$S3_LISTING" | grep -q "NoSuchBucket\|AccessDenied\|InvalidAccessKeyId\|SignatureDoesNotMatch"; then
+    echo "Error: Failed to access S3 bucket"
+    echo "Please check:"
+    echo "  - AWS credentials are configured correctly"
+    echo "  - The bucket exists and you have permissions"
+    echo "  - The S3 URI format is correct (s3://bucket/path)"
+    exit 1
+  elif echo "$S3_LISTING" | grep -q "NoSuchKey"; then
+    # Directory doesn't exist - that's fine, we'll create it
+    echo "S3 directory doesn't exist. Proceeding with initialization..."
+  else
+    echo "Error: Unexpected AWS CLI error:"
+    echo "$S3_LISTING"
+    exit 1
+  fi
+elif echo "$S3_LISTING" | grep -q .; then
+  # Directory exists and contains files
+  echo "Error: S3 directory $OIDCVPN_S3_URI already contains files:"
+  echo "$S3_LISTING"
+  echo ""
+  echo "Please either:"
+  echo "  - Delete existing files: aws s3 rm $OIDCVPN_S3_URI --recursive"
+  echo "  - Use a different S3 path"
   exit 1
+else
+  # Directory exists but is empty
+  echo "S3 directory exists but is empty. Proceeding with initialization..."
 fi
 
 # Create a dedicated temporary directory
@@ -97,7 +126,8 @@ tls-auth /etc/openvpn/ta.key 0
 cipher AES-256-GCM
 auth SHA256
 verb 3
-plugin /usr/lib/openvpn/plugins/openvpn-auth-oauth2.so /etc/openvpn/oauth2.yaml
+auth-user-pass-verify /usr/bin/openvpn-auth-oauth2 via-env
+script-security 2
 EOF
 fi
 

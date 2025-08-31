@@ -4,7 +4,7 @@ This repository builds a Docker image for OpenVPN Community Edition with the ope
 plugin, supporting OIDC authentication. 
 
 The image includes an init.sh which can generate the initial setup files (configs, keys and certs)
-which are then uploaded to an S3 bucket, where they can be tweaked as required.  They wil be downloaded and installed on container startup. 
+which are then uploaded to an S3 bucket, where they can be tweaked as required.  They wil be downloaded and installed on container startup.
 
 ## Setup Instructions
 
@@ -15,14 +15,21 @@ which are then uploaded to an S3 bucket, where they can be tweaked as required. 
 
 ### Getting started
 1. Clone this repository.
-2. Generate the initial config and certs:
+2. Set your S3 bucket/dir URI:
    ```sh
-   OIDCVPN_S3_URI=s3://<bucket name>/openvpn
-   docker-compose run --remove-orphans --build oidcvpn /init.sh 
+   export OIDCVPN_S3_URI=s3://<bucket name>/openvpn
    ```
-3. Run OpenVPN
+3. Build the image:
    ```sh
-   docker-compose run oidcvpn
+   docker build --platform=linux/amd64 -t danmorrison/oidcvpn .
+   ```
+4. Generate the initial config and certs:
+   ```sh 
+   docker run --rm --platform=linux/amd64 -e OIDCVPN_S3_URI="$OIDCVPN_S3_URI" -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" danmorrison/oidcvpn /init.sh 
+   ```
+5. Start OpenVPN server:
+   ```sh
+   docker run --rm --platform=linux/amd64 -p 1194:1194/udp --cap-add=NET_ADMIN --device /dev/net/tun -e OIDCVPN_S3_URI="$OIDCVPN_S3_URI" -e AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" -e AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" danmorrison/oidcvpn
    ```
    
 ### Entrypoint Script
