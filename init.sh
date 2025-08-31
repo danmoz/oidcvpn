@@ -11,6 +11,13 @@ if [ -z "$OIDCVPN_S3_URI" ]; then
   exit 1
 fi
 
+# Check if any files exist in the S3 URI (folder/prefix)
+if aws s3 ls "$OIDCVPN_S3_URI/" | grep -q .; then
+  echo "Error: S3 URI $OIDCVPN_S3_URI already contains files."
+  echo "Please rename or delete the existing S3 folder before running init.sh."
+  exit 1
+fi
+
 # Create a dedicated temporary directory
 TMPDIR=$(mktemp -d /tmp/openvpn-init-XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -67,7 +74,7 @@ cp "$EASYRSA_PKI/dh.pem" "$TMPDIR/dh.pem"
 # Generate TLS auth key
 test -f "$TMPDIR/ta.key" || openvpn --genkey --secret "$TMPDIR/ta.key"
 
-# Generate default server.conf if missing
+# Generate default server.conf
 if [ ! -f "$TMPDIR/server.conf" ]; then
   cat <<EOF > "$TMPDIR/server.conf"
 port 1194
@@ -90,17 +97,32 @@ tls-auth /etc/openvpn/ta.key 0
 cipher AES-256-GCM
 auth SHA256
 verb 3
+plugin /usr/lib/openvpn/plugins/openvpn-auth-oauth2.so /etc/openvpn/oauth2.yaml
+EOF
+fi
+
+# Generate default oauth2.yaml
+if [ ! -f "$TMPDIR/oauth2.yaml" ]; then
+  cat <<EOF > "$TMPDIR/oauth2.yaml"
+# openvpn-auth-oauth2 plugin YAML config template for Google OIDC
+client_id: "YOUR_GOOGLE_CLIENT_ID"
+client_secret: "YOUR_GOOGLE_CLIENT_SECRET"
+issuer: "https://accounts.google.com"
+redirect_uri: "https://vpn.example.com/callback"
+extra_scopes: "openid email profile"
+user_name_field: "email" # or "sub"
+# See plugin docs for more options
 EOF
 fi
 
 # Upload to S3
-for f in ca.crt server.crt server.key dh.pem ta.key server.conf; do
+for f in ca.crt server.crt server.key dh.pem ta.key server.conf oauth2.yaml; do
   aws s3 cp "$TMPDIR/$f" "$OIDCVPN_S3_URI/$f" || { echo "Failed to upload $f to S3"; exit 1; }
   echo "Generated $f in $TMPDIR"
 done
 
 # Output summary
 echo "Generated files in $TMPDIR:"
-ls -l "$TMPDIR" | grep -E '(ca.crt|server.crt|server.key|dh.pem|ta.key|server.conf)'
+ls -l "$TMPDIR" | grep -E '(ca.crt|server.crt|server.key|dh.pem|ta.key|server.conf|oauth2.yaml)'
 
 echo "Temporary directory $TMPDIR will be deleted."

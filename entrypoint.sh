@@ -11,7 +11,7 @@ rm -rf /tmp/openvpn-init-*
 
 # Check required env var for S3 bucket URI
 if [ -z "$OIDCVPN_S3_URI" ]; then
-  echo "Error: OIDCVPN_S3_URI environment variable not set."
+  echo "OIDCVPN_S3_URI environment variable not set; no configuration downloaded."
   exit 1
 fi
 

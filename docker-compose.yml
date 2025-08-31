@@ -1,5 +1,6 @@
 services:
   oidcvpn:
+    image: danmorrison/oidcvpn
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,6 +12,13 @@ services:
       - AWS_SECRET_ACCESS_KEY
       - AWS_DEFAULT_REGION
       - OIDCVPN_S3_URI
+      - OIDCVPN_OIDC_CLIENT_ID
+      - OIDCVPN_OIDC_CLIENT_SECRET
+      - OIDCVPN_OIDC_ISSUER
+      - OIDCVPN_OI
+      - DC_REDIRECT_URI
+      - OIDCVPN_OIDC_EXTRA_SCOPES
+      - OIDCVPN_OIDC_USER_NAME_FIELD
     ports:
       - "1194:1194/udp"
     cap_add:
