@@ -15,8 +15,14 @@ if [ -z "$OIDCVPN_S3_URI" ]; then
   exit 1
 fi
 
-# Sync the S3 bucket URI to /etc/openvpn
-aws s3 sync "$OIDCVPN_S3_URI" /etc/openvpn || { echo "Failed to sync S3 bucket URI to /etc/openvpn"; exit 1; }
+# Configure rclone for S3 (using environment variables)
+export RCLONE_CONFIG_S3_TYPE=s3
+export RCLONE_CONFIG_S3_PROVIDER=AWS
+export RCLONE_CONFIG_S3_ENV_AUTH=true
+export RCLONE_CONFIG_S3_NO_CHECK_BUCKET=true
+
+# Sync the S3 bucket URI to /etc/openvpn using rclone
+rclone sync "s3:${OIDCVPN_S3_URI#s3://}" /etc/openvpn || { echo "Failed to sync S3 bucket URI to /etc/openvpn"; exit 1; }
 
 # Start OpenVPN
 exec openvpn --config /etc/openvpn/server.conf

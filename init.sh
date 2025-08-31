@@ -13,38 +13,48 @@ fi
 
 # Test AWS credentials and check for existing files in one operation
 echo "Testing AWS credentials and checking for existing files..."
-S3_LISTING=$(aws s3 ls "$OIDCVPN_S3_URI/" 2>&1)
-AWS_EXIT_CODE=$?
 
-# Check if AWS command failed (credentials/permissions issue)
-if [ $AWS_EXIT_CODE -ne 0 ]; then
-  if echo "$S3_LISTING" | grep -q "NoSuchBucket\|AccessDenied\|InvalidAccessKeyId\|SignatureDoesNotMatch"; then
+# Configure rclone for S3 (using environment variables)
+export RCLONE_CONFIG_S3_TYPE=s3
+export RCLONE_CONFIG_S3_PROVIDER=AWS
+export RCLONE_CONFIG_S3_ENV_AUTH=true
+export RCLONE_CONFIG_S3_NO_CHECK_BUCKET=true
+
+# Capture stdout separately from stderr to avoid NOTICE messages being treated as files
+S3_LISTING=$(rclone lsf "s3:${OIDCVPN_S3_URI#s3://}/" 2>/dev/null)
+RCLONE_EXIT_CODE=$?
+
+# Check if rclone command failed (credentials/permissions issue)
+if [ $RCLONE_EXIT_CODE -ne 0 ]; then
+  # Re-run with stderr to get error details
+  S3_ERROR=$(rclone lsf "s3:${OIDCVPN_S3_URI#s3://}/" 2>&1 >/dev/null)
+  if echo "$S3_ERROR" | grep -q "NoSuchBucket\|AccessDenied\|InvalidAccessKeyId\|SignatureDoesNotMatch"; then
     echo "Error: Failed to access S3 bucket"
     echo "Please check:"
     echo "  - AWS credentials are configured correctly"
     echo "  - The bucket exists and you have permissions"
     echo "  - The S3 URI format is correct (s3://bucket/path)"
     exit 1
-  elif echo "$S3_LISTING" | grep -q "NoSuchKey"; then
+  elif echo "$S3_ERROR" | grep -q "directory not found"; then
     # Directory doesn't exist - that's fine, we'll create it
     echo "S3 directory doesn't exist. Proceeding with initialization..."
   else
-    echo "Error: Unexpected AWS CLI error:"
-    echo "$S3_LISTING"
+    echo "Error: Unexpected rclone error:"
+    echo "$S3_ERROR"
     exit 1
   fi
-elif echo "$S3_LISTING" | grep -q .; then
-  # Directory exists and contains files
+elif [ -n "$S3_LISTING" ]; then
+  # Directory exists and contains files (check only stdout content, not stderr notices)
   echo "Error: S3 directory $OIDCVPN_S3_URI already contains files:"
   echo "$S3_LISTING"
   echo ""
   echo "Please either:"
-  echo "  - Delete existing files: aws s3 rm $OIDCVPN_S3_URI --recursive"
+  echo "  - Delete existing files: rclone delete s3:${OIDCVPN_S3_URI#s3://}/"
   echo "  - Use a different S3 path"
   exit 1
 else
-  # Directory exists but is empty
-  echo "S3 directory exists but is empty. Proceeding with initialization..."
+  # Directory exists but is empty (or doesn't exist)
+  echo "S3 directory is empty or doesn't exist. Proceeding with initialization..."
 fi
 
 # Create a dedicated temporary directory
@@ -61,9 +71,9 @@ if ! command -v easyrsa >/dev/null 2>&1; then
   exit 1
 fi
 
-# Check for AWS CLI
-if ! command -v aws >/dev/null 2>&1; then
-  echo "AWS CLI not found. Please install awscli to upload to S3."
+# Check for rclone
+if ! command -v rclone >/dev/null 2>&1; then
+  echo "rclone not found. Please install rclone to upload to S3."
   exit 1
 fi
 
@@ -147,7 +157,7 @@ fi
 
 # Upload to S3
 for f in ca.crt server.crt server.key dh.pem ta.key server.conf oauth2.yaml; do
-  aws s3 cp "$TMPDIR/$f" "$OIDCVPN_S3_URI/$f" || { echo "Failed to upload $f to S3"; exit 1; }
+  rclone copy "$TMPDIR/$f" "s3:${OIDCVPN_S3_URI#s3://}/" || { echo "Failed to upload $f to S3"; exit 1; }
   echo "Generated $f in $TMPDIR"
 done
 
